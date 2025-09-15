@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+
+#### ---------------------------
+#### / :: VARIABLES ::  /
+#### ---------------------------
+
+INSTALL_DB="/var/lib/epkg"
+INSTALLED_LIST="$INSTALL_DB/installed.list"
+mkdir -p "$INSTALL_DB"
+touch "$INSTALLED_LIST"
+
+TMP="/tmp/epkg"
+command=$1
+fallback="dnf install"   # fallback if package not found in repo
+yes=0
+
+#### ---------------------------
+#### / :: FUNCTIONS ::  /
+#### ---------------------------
+
+epkg-print() {
+    case $1 in
+        error)   printf "\e[1;31mERROR\e[0m : %s\n" "$2" ;;
+        success) printf "\e[1;32mSUCCESS\e[0m : %s\n" "$2" ;;
+        info)    printf "\e[1;34mINFO\e[0m : %s\n" "$2" ;;
+    esac
+}
+
+epkg-help() {
+    cat <<EOF
+COMMANDS:
+  add      Add a package
+  kill     Kill a package
+  update   Update repositories & packages
+  list     Display installed packages
+  help     Display this message
+
+ARGUMENTS:
+  -y --yes     Don't ask [Y/n]
+EOF
+}
+
+epkg-add() {
+    [ -d /opt/epkg-repo ] || { epkg-print error "epkg repository not found"; exit 1; }
+
+    for package in "${@:2}"; do
+        [[ $package == -* ]] && continue
+
+        TMP="/tmp/epkg/$package"
+        mkdir -p "$TMP"
+
+        epkg-print info "Processing: $package"
+
+        if [[ $yes -eq 0 ]]; then
+            read -p "Is this ok? [Y/n]: " user_input
+            [[ $user_input =~ ^[Nn]$ ]] && exit 0
+        fi
+
+        if [ ! -f "/opt/epkg-repo/$package.emake" ]; then
+            $fallback "$package" -y
+        else
+            source "/opt/epkg-repo/$package.emake"
+
+            if [[ $(uname -m) != "$PACKAGE_ARCH" && "$PACKAGE_ARCH" != "any" ]]; then
+                epkg-print error "Cannot be installed on this machine"
+                [[ $yes -eq 0 ]] && read -p "Skip? [y/N]: " user_input && [[ $user_input =~ ^[Yy]$ ]] && exit 0
+            else
+                # Install dependencies
+                for dependency in "${PACKAGE_DEPENDENCIES[@]}"; do
+                    original_yes=$yes
+                    yes=1
+                    epkg-add add "$dependency"
+                    yes=$original_yes
+                done
+
+                # Build and install
+                prepare && build && finish
+                epkg-print success "Successfully installed $PACKAGE_NAME"
+
+                # Record installed package
+                if ! grep -q "^$PACKAGE_NAME " "$INSTALLED_LIST"; then
+                    echo "$PACKAGE_NAME $PACKAGE_VERSION" >> "$INSTALLED_LIST"
+                fi
+            fi
+        fi
+
+        rm -rf "$TMP"
+    done
+}
+
+epkg-kill() {
+    for package in "${@:2}"; do
+        [[ $package == -* ]] && continue
+
+        BIN_PATH="/usr/bin/$package"
+
+        if [ ! -f "$BIN_PATH" ]; then
+            epkg-print error "$package is not installed"
+            continue
+        fi
+
+        epkg-print info "Removing $package..."
+        rm -f "$BIN_PATH"
+
+        TMP="/tmp/epkg/$package"
+        [ -d "$TMP" ] && rm -rf "$TMP"
+
+        # Remove from installed list
+        sed -i "/^$package /d" "$INSTALLED_LIST"
+
+        epkg-print success "$package has been removed"
+    done
+}
+
+epkg-update() {
+    epkg-print info "Updating repository..."
+    rm -rf /opt/epkg-repo
+    git clone https://github.com/emperoros/epkg-repo /opt/epkg-repo || epkg-print error "Failed to update repo"
+    cd /opt/epkg-repo || exit
+
+    epkg-print info "Updating installed packages..."
+    while read -r line; do
+        package=$(echo "$line" | awk '{print $1}')
+        epkg-print info "Updating $package..."
+        source "/opt/epkg-repo/$package.emake"
+        prepare && build && finish
+        epkg-print success "$package updated"
+    done < "$INSTALLED_LIST"
+}
+
+epkg-list() {
+    [ -f /var/lib/epkg/installed.list ] || { epkg-print info "No packages installed"; return; }
+
+    mapfile -t packages < /var/lib/epkg/installed.list
+
+    cols=4
+
+    for ((i=0; i<${#packages[@]}; i++)); do
+        printf "%-20s" "${packages[i]}"  
+        if (( (i+1) % cols == 0 )); then
+            echo
+        fi
+    done
+    echo
+}
+
+
+#### ---------------------------
+#### / ARGUMENT PARSER ::  /
+#### ---------------------------
+
+for arg in "$@"; do
+    case $arg in
+        -y|--yes) yes=1 ;;
+    esac
+done
+
+#### ---------------------------
+#### / COMMAND PARSER ::  /
+#### ---------------------------
+
+case $command in
+    add)    epkg-add "$@" ;;
+    kill)   epkg-kill "$@" ;;
+    update) epkg-update ;;
+    list)   epkg-list ;;
+    help)   epkg-help ;;
+    *) 
+        epkg-print error "Unknown command"
+        epkg-help
+        exit 1
+        ;;
+esac
