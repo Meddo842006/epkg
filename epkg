@@ -57,30 +57,42 @@ epkg-add() {
         fi
 
         if [ ! -f "/opt/epkg-repo/$package.emake" ]; then
+            # Fallback to dnf
             $fallback "$package" -y
+            if [ $? -eq 0 ]; then
+                pkg_version=$(rpm -q --qf '%{VERSION}\n' "$package" 2>/dev/null)
+                if ! grep -q "^$package " "$INSTALLED_LIST"; then
+                    echo "$package $pkg_version" >> "$INSTALLED_LIST"
+                fi
+                epkg-print success "Successfully installed $package via fallback"
+            else
+                epkg-print error "Failed to install $package via fallback"
+            fi
         else
+            # Custom epkg install
             source "/opt/epkg-repo/$package.emake"
 
             if [[ $(uname -m) != "$PACKAGE_ARCH" && "$PACKAGE_ARCH" != "any" ]]; then
                 epkg-print error "Cannot be installed on this machine"
                 [[ $yes -eq 0 ]] && read -p "Skip? [y/N]: " user_input && [[ $user_input =~ ^[Yy]$ ]] && exit 0
-            else
-                # Install dependencies
-                for dependency in "${PACKAGE_DEPENDENCIES[@]}"; do
-                    original_yes=$yes
-                    yes=1
-                    epkg-add add "$dependency"
-                    yes=$original_yes
-                done
+                continue
+            fi
 
-                # Build and install
-                prepare && build && finish
-                epkg-print success "Successfully installed $PACKAGE_NAME"
+            # Install dependencies
+            for dependency in "${PACKAGE_DEPENDENCIES[@]}"; do
+                original_yes=$yes
+                yes=1
+                epkg-add add "$dependency"
+                yes=$original_yes
+            done
 
-                # Record installed package
-                if ! grep -q "^$PACKAGE_NAME " "$INSTALLED_LIST"; then
-                    echo "$PACKAGE_NAME $PACKAGE_VERSION" >> "$INSTALLED_LIST"
-                fi
+            # Build and install
+            prepare && build && finish
+            epkg-print success "Successfully installed $PACKAGE_NAME"
+
+            # Record installed package
+            if ! grep -q "^$PACKAGE_NAME " "$INSTALLED_LIST"; then
+                echo "$PACKAGE_NAME $PACKAGE_VERSION" >> "$INSTALLED_LIST"
             fi
         fi
 
@@ -122,9 +134,13 @@ epkg-update() {
     while read -r line; do
         package=$(echo "$line" | awk '{print $1}')
         epkg-print info "Updating $package..."
-        source "/opt/epkg-repo/$package.emake"
-        prepare && build && finish
-        epkg-print success "$package updated"
+        if [ -f "/opt/epkg-repo/$package.emake" ]; then
+            source "/opt/epkg-repo/$package.emake"
+            prepare && build && finish
+            epkg-print success "$package updated"
+        else
+            epkg-print info "$package not in repo, skipping..."
+        fi
     done < "$INSTALLED_LIST"
 }
 
@@ -134,7 +150,6 @@ epkg-list() {
     mapfile -t packages < /var/lib/epkg/installed.list
 
     cols=4
-
     for ((i=0; i<${#packages[@]}; i++)); do
         printf "%-20s" "${packages[i]}"  
         if (( (i+1) % cols == 0 )); then
@@ -143,7 +158,6 @@ epkg-list() {
     done
     echo
 }
-
 
 #### ---------------------------
 #### / ARGUMENT PARSER ::  /
