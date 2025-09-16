@@ -36,6 +36,7 @@ COMMANDS:
 
 ARGUMENTS:
   -y --yes     Don't ask [Y/n]
+  -l --local   Add a local package (don't use the repository)
 EOF
 }
 
@@ -123,6 +124,57 @@ epkg-add() {
     done
 }
 
+epkg-add-local() {
+    for emake_file in "${@:2}"; do
+        [[ $emake_file == -* ]] && continue
+
+        TMP="/tmp/epkg/$(basename "$emake_file" .emake)"
+        mkdir -p "$TMP"
+
+        epkg-print info "Processing local emake: $emake_file"
+
+        if [[ $yes -eq 0 ]]; then
+            read -p "Is this ok? [Y/n]: " user_input
+            [[ $user_input =~ ^[Nn]$ ]] && exit 0
+        fi
+
+        yes=1
+
+        if [ ! -f "$emake_file" ]; then
+            epkg-print error "File not found: $emake_file"
+            exit 1
+        fi
+
+        # Load local package definition
+        source "$emake_file"
+
+        if [[ $(uname -m) != "$PACKAGE_ARCH" && "$PACKAGE_ARCH" != "any" ]]; then
+            epkg-print error "Cannot be installed on this machine"
+            [[ $yes -eq 0 ]] && read -p "Skip? [y/N]: " user_input && [[ $user_input =~ ^[Yy]$ ]] && exit 0
+            continue
+        fi
+
+        # Install dependencies with regular epkg
+        for dependency in "${PACKAGE_DEPENDENCIES[@]}"; do
+            original_yes=$yes
+            yes=1
+            epkg-add add "$dependency"
+            yes=$original_yes
+        done
+
+        # Build and install
+        prepare && build && finish
+        epkg-print success "Successfully installed package $PACKAGE_NAME"
+
+        # Record installed package
+        if ! grep -q "^$PACKAGE_NAME " "$INSTALLED_LIST"; then
+            echo "$PACKAGE_NAME $PACKAGE_VERSION" >> "$INSTALLED_LIST"
+        fi
+
+        rm -rf "$TMP"
+    done
+}
+
 epkg-kill() {
     for package in "${@:2}"; do
         [[ $package == -* ]] && continue
@@ -192,7 +244,8 @@ epkg-list() {
 
 for arg in "$@"; do
     case $arg in
-        -y|--yes) yes=1 ;;
+        -y|--yes)    yes=1 ;;
+        -l|--local ) epkg-add-local "${@:2}" ;;
     esac
 done
 
