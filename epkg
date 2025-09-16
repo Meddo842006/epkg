@@ -7,7 +7,7 @@
 INSTALL_DB="/var/lib/epkg"
 INSTALLED_LIST="$INSTALL_DB/installed.list"
 mkdir -p "$INSTALL_DB"
-touch "$INSTALLED_LIST"
+touch "$INSTALLED_LIST" >/dev/null
 
 TMP="/tmp/epkg"
 command=$1
