@@ -6,9 +6,6 @@
 
 INSTALL_DB="/var/lib/epkg"
 INSTALLED_LIST="$INSTALL_DB/installed.list"
-mkdir -p "$INSTALL_DB"
-touch "$INSTALLED_LIST" >/dev/null
-
 TMP="/tmp/epkg"
 command=$1
 fallback="dnf install"   # fallback if package not found in repo
@@ -39,6 +36,28 @@ ARGUMENTS:
   -y --yes     Don't ask [Y/n]
 EOF
 }
+
+# -----------------------
+# Ensure INSTALL_DB exists
+# -----------------------
+if [ ! -d "$INSTALL_DB" ]; then
+    if ! mkdir -p "$INSTALL_DB" 2>/dev/null; then
+        epkg-print error "Cannot create $INSTALL_DB. Try running as root."
+        exit 1
+    fi
+fi
+
+# Ensure INSTALLED_LIST exists
+if [ ! -f "$INSTALLED_LIST" ]; then
+    if ! touch "$INSTALLED_LIST" 2>/dev/null; then
+        epkg-print error "Cannot create $INSTALLED_LIST. Try running as root."
+        exit 1
+    fi
+fi
+
+#### ---------------------------
+#### / :: CORE FUNCTIONS ::  /
+#### ---------------------------
 
 epkg-add() {
     [ -d /opt/epkg-repo ] || { epkg-print error "epkg repository not found"; exit 1; }
@@ -145,9 +164,9 @@ epkg-update() {
 }
 
 epkg-list() {
-    [ -f /var/lib/epkg/installed.list ] || { epkg-print info "No packages installed"; return; }
+    [ -f "$INSTALLED_LIST" ] || { epkg-print info "No packages installed"; return; }
 
-    mapfile -t packages < /var/lib/epkg/installed.list
+    mapfile -t packages < "$INSTALLED_LIST"
 
     cols=4
     for ((i=0; i<${#packages[@]}; i++)); do
