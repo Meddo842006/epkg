@@ -8,6 +8,7 @@ INSTALL_DB="/var/lib/epkg"
 INSTALLED_LIST="$INSTALL_DB/installed.list"
 TMP="/tmp/epkg"
 command=$1
+epkg_version="v1.01"
 fallback="dnf install"   # fallback if package not found in repo
 yes=0
 
@@ -75,6 +76,8 @@ epkg-add() {
             [[ $user_input =~ ^[Nn]$ ]] && exit 0
         fi
 
+        yes=1
+        
         if [ ! -f "/opt/epkg-repo/$package.emake" ]; then
             # Fallback to dnf
             $fallback "$package" -y
@@ -163,6 +166,10 @@ epkg-update() {
     done < "$INSTALLED_LIST"
 }
 
+epkg-version() {
+    epkg-print info "$0 $epkg_version"
+}
+
 epkg-list() {
     [ -f "$INSTALLED_LIST" ] || { epkg-print info "No packages installed"; return; }
 
@@ -193,11 +200,12 @@ done
 #### ---------------------------
 
 case $command in
-    add)    epkg-add "$@" ;;
-    kill)   epkg-kill "$@" ;;
-    update) epkg-update ;;
-    list)   epkg-list ;;
-    help)   epkg-help ;;
+    add)      epkg-add "$@" ;;
+    kill)     epkg-kill "$@" ;;
+    update)   epkg-update ;;
+    list)     epkg-list ;;
+    version)  epkg-version;
+    help)     epkg-help ;;
     *) 
         epkg-print error "Unknown command"
         epkg-help
