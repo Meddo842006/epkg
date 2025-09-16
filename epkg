@@ -77,7 +77,7 @@ epkg-add() {
         fi
 
         yes=1
-        
+
         if [ ! -f "/opt/epkg-repo/$package.emake" ]; then
             # Fallback to dnf
             $fallback "$package" -y
@@ -204,7 +204,7 @@ case $command in
     kill)     epkg-kill "$@" ;;
     update)   epkg-update ;;
     list)     epkg-list ;;
-    version)  epkg-version;
+    version)  epkg-version ;;
     help)     epkg-help ;;
     *) 
         epkg-print error "Unknown command"
