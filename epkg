@@ -31,6 +31,7 @@ COMMANDS:
   kill     Kill a package
   update   Update repositories & packages
   list     Display installed packages
+  version  Display the version of $(basename "$0")
   help     Display this message
 
 ARGUMENTS:
@@ -167,7 +168,7 @@ epkg-update() {
 }
 
 epkg-version() {
-    epkg-print info "$0 $epkg_version"
+    epkg-print info "$(basename "$0") $epkg_version"
 }
 
 epkg-list() {
